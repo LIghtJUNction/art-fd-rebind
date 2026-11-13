@@ -1,8 +1,8 @@
 # App Namespace Experiments
 
-实验性 Zygisk 模块，包含两个独立的UID开关：ART只读句柄重开，以及应用启动前的私有 Oplus overlay 隔离。默认不对任何应用启用。
+实验性 Zygisk 模块，包含 ART 只读句柄重开、应用启动前的私有 Oplus overlay 隔离。普通应用按 UID 启用；v0.2.1 增加按 Android 用户和包名选择隔离服务。默认不对任何应用启用。
 
-**当前不能消除 Native Detector 7.7.0 的 Magic Mount 报警。** 本项目保留可复现的实验代码，用于研究文件描述符与挂载命名空间的关系，不宣称通过 root 检测。
+**尚未全部通过 Native Detector 7.7.0。** 同一次开机的冷启动对照中，Oplus 隔离关闭时有两条可疑挂载警告，开启后剩一条。ART 句柄重开方案未能消除此前的 Magic Mount 报警；本次开关两种状态都没有 Magic Mount，不能将它的消失归功于 Oplus 隔离。
 
 ## 已验证的结果
 
@@ -15,8 +15,9 @@
 | 文件设备号、inode、位置、FD及状态标志保持不变 | 通过 |
 | 不改动无关文件句柄；重复执行无额外操作 | 通过 |
 | 在应用内将 ART 句柄挂载编号变为当前命名空间编号 | 已观察到，开关对照成立 |
-| 消除 Native Detector7.7.0 Magic Mount | **未通过** |
-| v0.2 Oplus 隔离独立自测 | 9个覆盖层移除，系统主命名空间保持原样；应用检测结果待验证 |
+| 通过 ART 句柄重开消除 Native Detector7.7.0 Magic Mount | **未通过** |
+| v0.2 Oplus 隔离独立自测及应用挂载视图 | 9个覆盖层移除，系统主命名空间保持原样 |
+| v0.2 同次开机冷启动开关对照 | 关闭时2条可疑挂载警告，开启后1条；两种状态均无 Magic Mount |
 
 该结果说明：消除继承句柄与当前命名空间的挂载编号差异，本身不足以消除这项报警。检测器的完整原生判定条件未公开，不能据此认定其具体算法。
 
@@ -24,7 +25,28 @@
 
 使用 NoHello 已有的隔离思路，在 `preAppSpecialize` 中创建新的挂载命名空间、确认身份已变化，并将挂载传播设为递归 PRIVATE，然后才允许卸载其中的 overlay。限定目标是 `/system_ext/framework/oplusex/` 或 `/system_ext/lib64/oplusex/` 下的 overlay 挂载，不处理其他路径。任何隔离前提失败时都不会尝试卸载。
 
+剩余警告指向 `/system_ext/lib64/oplusex/com.oplus.NetworkAssistSys`。当前根权限观察到该应用路径已经是 EROFS，所有检查到的应用线程使用同一挂载命名空间，未发现该路径的旧句柄或映射；残留的具体检测条件尚未确定。社区也有[原厂 Oplus 路径相关报告](https://github.com/reveny/Android-Native-Root-Detector/issues/105)，这不证明本机的具体判定条件。
+
 这是显式启用的应用兼容性实验，可能使目标应用缺少厂商扩展。系统主命名空间及其他应用的挂载不改变。
+
+## 隔离服务作用域（v0.2.1，装机复测前）
+
+隔离服务使用临时 UID，可能与主应用拥有不同挂载视图。实机日志已观察到主进程的 Oplus 覆盖层为 0，而普通隔离服务仍有 9 个，NetworkAssistSys 仍为 overlay。v0.2.1 增加按 Android 用户和私有进程名中的包名前缀匹配隔离服务的规则；不使用会被其他应用复用的临时 UID 标记。
+
+例如在 root shell 中启用 Android 用户 0 的 `your.package.name`：
+
+```sh
+mkdir -p /data/adb/art_fd_rebind/isolated_targets/0
+chmod 700 /data/adb/art_fd_rebind /data/adb/art_fd_rebind/isolated_targets /data/adb/art_fd_rebind/isolated_targets/0
+touch /data/adb/art_fd_rebind/isolated_targets/0/your.package.name
+chmod 600 /data/adb/art_fd_rebind/isolated_targets/0/your.package.name
+```
+
+仅支持 `包名:私有标识符[:实例…]` 形式，私有标识符不能包含点；自定义全局进程名及无法确认这种形式的名称不匹配。App Zygote 父进程仍使用其所属普通 UID 的规则。
+
+这项标记只启用对应隔离服务的 Oplus 功能，不启用 ART 重开。主应用的 UID 标记仍单独设置。移除标记并强制停止主应用可撤销。临时 UID 区间的普通 UID 标记会被忽略。该修复的应用检测结果尚待新版装机验证。
+
+可选的 root-only `debug` 标记会将已选择进程的 PID、UID、包名及覆盖层移除数记录到私有 `isolated.log`；默认关闭，不采集用户文件内容。调试结束应删除标记与不再需要的日志。
 
 ## ART 句柄工作方式
 
@@ -71,7 +93,7 @@ chmod 600 /data/adb/art_fd_rebind/targets/12345
 
 上面是 ART 句柄开关。若只测试 Oplus 隔离，则不创建 `targets/12345`，改为创建 `/data/adb/art_fd_rebind/oplus_targets/12345`（同样只允许root写入）。两个开关互不依赖。
 
-强制停止并重新打开目标应用。撤销时删除对应标记，再强制停止并重新打开应用。应用卸载或UID变化时也应移除旧标记。完整停用或移除模块通过 KernelSU 操作并重启生效。测试设备上的标记已移除，模块已停用。
+强制停止并重新打开目标应用。撤销时删除对应标记，再强制停止并重新打开应用。应用卸载或UID变化时也应移除旧标记。完整停用或移除模块通过 KernelSU 操作并重启生效。当前测试设备只对检测应用开启 Oplus 隔离，ART 句柄重开关闭；发行包本身不包含任何目标 UID。
 
 ## 独立自测
 

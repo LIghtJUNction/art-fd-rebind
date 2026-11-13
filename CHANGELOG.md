@@ -1,3 +1,11 @@
+# v0.2.1 — experimental (device acceptance pending)
+
+- Select isolated services by Android user and package name, including dynamic private service-instance process names. Reject ambiguous global names; app-zygote parents retain their ordinary UID policy.
+- Ignore persistent numeric UID markers for recycled isolated UIDs; ART rebinding remains disabled for these services.
+- Reset inherited policy before every specialization; validate root-owned marker files and bound companion requests.
+- Optional private audit of selected processes and overlay removal counts.
+- Root-side live capture confirmed the previous gap: main app has zero targeted overlays while normal isolated services retain all nine. This release is not yet claimed to clear the final detector warning.
+
 # v0.2.0 — experimental
 
 - Add independent UID opt-in for pre-specialization Oplus overlay isolation.

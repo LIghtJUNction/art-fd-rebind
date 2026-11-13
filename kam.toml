@@ -1,8 +1,8 @@
 [prop]
 id = "art_fd_rebind"
 name = "App Namespace Experiments"
-version = "v0.2.0"
-versionCode = 3
+version = "v0.2.1"
+versionCode = 4
 author = "LIghtJUNction; AOSP/NoHello FD helpers"
 description = "Opt-in ART FD rebind and private Oplus overlay isolation experiments"
 

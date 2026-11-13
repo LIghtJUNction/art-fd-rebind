@@ -2,9 +2,11 @@
 // Copyright 2026 LIghtJUNction
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <cstring>
 #include "zygisk.hpp"
 #include "repair.hpp"
 #include "oplus.hpp"
+#include "scope.hpp"
 
 static bool transfer(int fd, void* data, size_t size, bool sending) {
     auto* p = static_cast<char*>(data);
@@ -17,43 +19,76 @@ static bool transfer(int fd, void* data, size_t size, bool sending) {
     return true;
 }
 
+static bool scopeMarker(const std::string& path) {
+    struct stat st{};
+    return !path.empty() && lstat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode) &&
+        st.st_uid == 0 && !(st.st_mode & 0022);
+}
+
 static void scopeCompanion(int client) {
-    int uid = -1;
+    timeval timeout{0, 500000};
+    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    ScopeQuery query{};
     unsigned char enabled = 0;
-    if (transfer(client, &uid, sizeof(uid), false) && uid >= 10000) {
-        const auto file = "/data/adb/art_fd_rebind/targets/" + std::to_string(uid);
-        struct stat st{};
-        enabled = ::stat(file.c_str(), &st) == 0 && S_ISREG(st.st_mode);
-        const auto oplus = "/data/adb/art_fd_rebind/oplus_targets/" + std::to_string(uid);
-        if (::stat(oplus.c_str(), &st) == 0 && S_ISREG(st.st_mode)) enabled |= 2;
+    if (transfer(client, &query, sizeof(query), false) && query.uid >= 10000 &&
+        memchr(query.process, 0, sizeof(query.process))) {
+        if (isIsolatedUid(query.uid)) {
+            // Isolated IDs are recycled: never apply a persistent UID marker to them.
+            if (scopeMarker(isolatedScopeMarker(query.uid, query.process, query.childZygote != 0))) enabled = 2;
+        } else {
+            enabled = scopeMarker("/data/adb/art_fd_rebind/targets/" + std::to_string(query.uid));
+            if (scopeMarker("/data/adb/art_fd_rebind/oplus_targets/" + std::to_string(query.uid))) enabled |= 2;
+        }
     }
-    transfer(client, &enabled, sizeof(enabled), true);
+    if (transfer(client, &enabled, sizeof(enabled), true) && (enabled & 2)) {
+        int removed = -1;
+        if (transfer(client, &removed, sizeof(removed), false) &&
+            scopeMarker("/data/adb/art_fd_rebind/debug")) {
+            const int log = open("/data/adb/art_fd_rebind/isolated.log",
+                O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
+            if (log >= 0) {
+                const auto package = processPackage(query.process, query.childZygote != 0);
+                dprintf(log, "pid=%d uid=%d child_zygote=%d policy=%u removed=%d package=%s\n",
+                    query.pid, query.uid, query.childZygote != 0, enabled, removed, package.c_str());
+                close(log);
+            }
+        }
+    }
     close(client);
 }
 
 class ArtFdRebind final : public zygisk::ModuleBase {
     zygisk::Api* api = nullptr;
+    JNIEnv* env = nullptr;
     unsigned char enabled = 0;
 public:
-    void onLoad(zygisk::Api* value, JNIEnv*) override { api = value; }
+    void onLoad(zygisk::Api* value, JNIEnv* jni) override { api = value; env = jni; }
     void preAppSpecialize(zygisk::AppSpecializeArgs* args) override {
+        enabled = 0;
         if (args->uid >= 10000 && !(api->getFlags() & zygisk::StateFlag::PROCESS_GRANTED_ROOT)) {
             const int client = api->connectCompanion();
             if (client >= 0) {
                 timeval timeout{0, 500000};
                 setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
                 setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-                int uid = args->uid;
+                ScopeQuery query{};
+                query.uid = args->uid;
+                query.pid = getpid();
+                query.childZygote = args->is_child_zygote && *args->is_child_zygote;
+                if (args->nice_name && static_cast<size_t>(env->GetStringUTFLength(args->nice_name)) < sizeof(query.process)) {
+                    env->GetStringUTFRegion(args->nice_name, 0, env->GetStringLength(args->nice_name), query.process);
+                }
                 unsigned char policy = 0;
-                if (transfer(client, &uid, sizeof(uid), true) &&
+                if (transfer(client, &query, sizeof(query), true) &&
                     transfer(client, &policy, sizeof(policy), false)) enabled = policy;
+                if (enabled & 2) {
+                    int removed = isolateOplusOverlays();
+                    transfer(client, &removed, sizeof(removed), true);
+                }
                 close(client);
-                if (enabled) LOGI("selected v0.2.0 pid=%d uid=%d policy=%u", getpid(), uid, enabled);
+                if (enabled) LOGI("selected v0.2.1 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
             }
-        }
-        if (enabled & 2) {
-            const int removed = isolateOplusOverlays();
-            LOGI("Oplus private namespace pid=%d removed=%d", getpid(), removed);
         }
         if (!enabled) api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
     }

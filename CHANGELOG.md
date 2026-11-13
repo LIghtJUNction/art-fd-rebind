@@ -5,6 +5,7 @@
 - Reset inherited policy before every specialization; validate root-owned marker files and bound companion requests.
 - Optional private audit of selected processes and overlay removal counts.
 - Root-side live capture confirmed the previous gap: main app has zero targeted overlays while normal isolated services retain all nine. First v0.2.1 device run confirms removal in main, app-zygote parent, and all nine normal isolated services. The Oplus warning is absent, but Magic Mount returned after reboot; this is not a complete detector pass.
+- Same-boot isolated-rule cold-start A/B: off gives Magic Mount plus Oplus Suspicious Mount; on leaves only Magic Mount.
 
 # v0.2.0 — experimental
 

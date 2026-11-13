@@ -1,8 +1,9 @@
-# v0.2.4 — experimental (app acceptance pending)
+# v0.2.4 — experimental (device acceptance passed)
 
 - Rebind the 12 fixed public boot JARs inherited at FD8–19 on the tested device, rather than stopping after core-libart.jar. No client-selected pathname or arbitrary file proxy.
-- Gather real source descriptors before namespace isolation, preserving independent per-file identities, flags and positions; retain rollback and multiple-handle refusal.
-- v0.2.3 app logs confirmed genuine core-libart replacement, then Native Detector displayed okhttp.jar as its next first match. Full v0.2.4 app acceptance remains pending.
+- Gather real source descriptors before namespace isolation, preserving independent per-file identities, flags and positions; retain rollback and multiple-handle refusal. Abort broken IPC exchanges instead of reusing the stream.
+- Device validation: all 12 files pass with/without NOFOLLOW; concurrent companion wire test passes with 12 sources held at once and mixed original flags.
+- v0.2.3 app logs confirmed genuine core-libart replacement, then Native Detector displayed okhttp.jar as its next first match. v0.2.4 passes Native Detector 7.7.0 on PHK110 / Android 16 with Experimental Detections=false and Custom ROM Detections=false. Same-boot cold-start OFF reproduces Magic Mount; ON restores normal. Oplus scope remained enabled.
 
 # v0.2.3 — experimental (core-libart repaired; other inherited JARs remain)
 

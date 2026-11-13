@@ -1,0 +1,8 @@
+/build/
+/dist/
+/.kam/
+/src/art_fd_rebind/zygisk/*.so
+*.log
+*.png
+.env
+__pycache__/

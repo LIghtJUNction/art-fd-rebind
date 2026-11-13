@@ -2,7 +2,7 @@
 
 实验性 Zygisk 模块，包含 ART 只读句柄重开、应用启动前的私有 Oplus overlay 隔离。普通应用按 UID 启用；v0.2.1 增加按 Android 用户和包名选择隔离服务。默认不对任何应用启用。
 
-**尚未全部通过 Native Detector 7.7.0。** 同一次开机的冷启动对照中，Oplus 隔离关闭时有两条可疑挂载警告，开启后剩一条。ART 句柄重开方案未能消除此前的 Magic Mount 报警；本次开关两种状态都没有 Magic Mount，不能将它的消失归功于 Oplus 隔离。
+**尚未全部通过 Native Detector 7.7.0。** v0.2.1 本机首次实测中，Oplus 可疑挂载警告已消失，重启后此前的 Magic Mount 再次出现。该版本不宣称解决 Magic Mount。v0.2 的同次开机对照仅确认主应用 Oplus 隔离将可疑挂载从两条降至一条。
 
 ## 已验证的结果
 
@@ -18,6 +18,7 @@
 | 通过 ART 句柄重开消除 Native Detector7.7.0 Magic Mount | **未通过** |
 | v0.2 Oplus 隔离独立自测及应用挂载视图 | 9个覆盖层移除，系统主命名空间保持原样 |
 | v0.2 同次开机冷启动开关对照 | 关闭时2条可疑挂载警告，开启后1条；两种状态均无 Magic Mount |
+| v0.2.1 首次装机验证 | 主应用、App Zygote 父进程及9个普通隔离服务分别移除9个覆盖层；Oplus 警告消失，Magic Mount 在本次重启后复现 |
 
 该结果说明：消除继承句柄与当前命名空间的挂载编号差异，本身不足以消除这项报警。检测器的完整原生判定条件未公开，不能据此认定其具体算法。
 
@@ -25,11 +26,11 @@
 
 使用 NoHello 已有的隔离思路，在 `preAppSpecialize` 中创建新的挂载命名空间、确认身份已变化，并将挂载传播设为递归 PRIVATE，然后才允许卸载其中的 overlay。限定目标是 `/system_ext/framework/oplusex/` 或 `/system_ext/lib64/oplusex/` 下的 overlay 挂载，不处理其他路径。任何隔离前提失败时都不会尝试卸载。
 
-剩余警告指向 `/system_ext/lib64/oplusex/com.oplus.NetworkAssistSys`。当前根权限观察到该应用路径已经是 EROFS，所有检查到的应用线程使用同一挂载命名空间，未发现该路径的旧句柄或映射；残留的具体检测条件尚未确定。社区也有[原厂 Oplus 路径相关报告](https://github.com/reveny/Android-Native-Root-Detector/issues/105)，这不证明本机的具体判定条件。
+v0.2 当时剩余的警告指向 `/system_ext/lib64/oplusex/com.oplus.NetworkAssistSys`。v0.2 根权限观察到主应用路径已经是 EROFS，但后来发现普通隔离服务仍保留 overlay，主进程线程检查没有覆盖独立服务。v0.2.1 补齐了这部分作用域。社区也有[原厂 Oplus 路径相关报告](https://github.com/reveny/Android-Native-Root-Detector/issues/105)，这不证明本机的具体判定条件。
 
 这是显式启用的应用兼容性实验，可能使目标应用缺少厂商扩展。系统主命名空间及其他应用的挂载不改变。
 
-## 隔离服务作用域（v0.2.1，装机复测前）
+## 隔离服务作用域（v0.2.1）
 
 隔离服务使用临时 UID，可能与主应用拥有不同挂载视图。实机日志已观察到主进程的 Oplus 覆盖层为 0，而普通隔离服务仍有 9 个，NetworkAssistSys 仍为 overlay。v0.2.1 增加按 Android 用户和私有进程名中的包名前缀匹配隔离服务的规则；不使用会被其他应用复用的临时 UID 标记。
 
@@ -44,7 +45,7 @@ chmod 600 /data/adb/art_fd_rebind/isolated_targets/0/your.package.name
 
 仅支持 `包名:私有标识符[:实例…]` 形式，私有标识符不能包含点；自定义全局进程名及无法确认这种形式的名称不匹配。App Zygote 父进程仍使用其所属普通 UID 的规则。
 
-这项标记只启用对应隔离服务的 Oplus 功能，不启用 ART 重开。主应用的 UID 标记仍单独设置。移除标记并强制停止主应用可撤销。临时 UID 区间的普通 UID 标记会被忽略。该修复的应用检测结果尚待新版装机验证。
+这项标记只启用对应隔离服务的 Oplus 功能，不启用 ART 重开。主应用的 UID 标记仍单独设置。移除标记并强制停止主应用可撤销。临时 UID 区间的普通 UID 标记会被忽略。新版首次装机验证：主应用、App Zygote 父进程，以及普通隔离服务均已确认移除 9 个覆盖层；界面不再显示 Oplus 可疑挂载，但仍有 Magic Mount。尚不能据此承诺其他环境兼容性。
 
 可选的 root-only `debug` 标记会将已选择进程的 PID、UID、包名及覆盖层移除数记录到私有 `isolated.log`；默认关闭，不采集用户文件内容。调试结束应删除标记与不再需要的日志。
 

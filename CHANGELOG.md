@@ -1,10 +1,10 @@
-# v0.2.1 — experimental (device acceptance pending)
+# v0.2.1 — experimental
 
 - Select isolated services by Android user and package name, including dynamic private service-instance process names. Reject ambiguous global names; app-zygote parents retain their ordinary UID policy.
 - Ignore persistent numeric UID markers for recycled isolated UIDs; ART rebinding remains disabled for these services.
 - Reset inherited policy before every specialization; validate root-owned marker files and bound companion requests.
 - Optional private audit of selected processes and overlay removal counts.
-- Root-side live capture confirmed the previous gap: main app has zero targeted overlays while normal isolated services retain all nine. This release is not yet claimed to clear the final detector warning.
+- Root-side live capture confirmed the previous gap: main app has zero targeted overlays while normal isolated services retain all nine. First v0.2.1 device run confirms removal in main, app-zygote parent, and all nine normal isolated services. The Oplus warning is absent, but Magic Mount returned after reboot; this is not a complete detector pass.
 
 # v0.2.0 — experimental
 

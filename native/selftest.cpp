@@ -4,8 +4,20 @@
 #include <sched.h>
 #include <cstdio>
 #include "repair.hpp"
+#include "oplus.hpp"
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--oplus") {
+        const auto before = oplusOverlayTargets().size();
+        const auto ns = mountNamespaceIdentity();
+        const int removed = isolateOplusOverlays();
+        const auto after = oplusOverlayTargets().size();
+        const bool privateNs = mountNamespaceIdentity() != ns;
+        const bool repeatNoop = isolateOplusOverlays() == 0;
+        std::printf("before=%zu removed=%d after=%zu new_namespace=%d repeat_noop=%d\n",
+            before, removed, after, privateNs, repeatNoop);
+        return before > 0 && removed == static_cast<int>(before) && after == 0 && privateNs && repeatNoop ? 0 : 20;
+    }
     const int art = open("/apex/com.android.art/javalib/core-libart.jar", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     const int other = open("/system/etc/hosts", O_RDONLY | O_CLOEXEC);
     if (art < 0 || other < 0 || lseek64(art, 4, SEEK_SET) != 4) return 10;

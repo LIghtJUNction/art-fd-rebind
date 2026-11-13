@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include "zygisk.hpp"
 #include "repair.hpp"
+#include "oplus.hpp"
 
 static bool transfer(int fd, void* data, size_t size, bool sending) {
     auto* p = static_cast<char*>(data);
@@ -23,6 +24,8 @@ static void scopeCompanion(int client) {
         const auto file = "/data/adb/art_fd_rebind/targets/" + std::to_string(uid);
         struct stat st{};
         enabled = ::stat(file.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+        const auto oplus = "/data/adb/art_fd_rebind/oplus_targets/" + std::to_string(uid);
+        if (::stat(oplus.c_str(), &st) == 0 && S_ISREG(st.st_mode)) enabled |= 2;
     }
     transfer(client, &enabled, sizeof(enabled), true);
     close(client);
@@ -30,7 +33,7 @@ static void scopeCompanion(int client) {
 
 class ArtFdRebind final : public zygisk::ModuleBase {
     zygisk::Api* api = nullptr;
-    bool enabled = false;
+    unsigned char enabled = 0;
 public:
     void onLoad(zygisk::Api* value, JNIEnv*) override { api = value; }
     void preAppSpecialize(zygisk::AppSpecializeArgs* args) override {
@@ -42,16 +45,20 @@ public:
                 setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
                 int uid = args->uid;
                 unsigned char policy = 0;
-                enabled = transfer(client, &uid, sizeof(uid), true) &&
-                    transfer(client, &policy, sizeof(policy), false) && policy;
+                if (transfer(client, &uid, sizeof(uid), true) &&
+                    transfer(client, &policy, sizeof(policy), false)) enabled = policy;
                 close(client);
-                if (enabled) LOGI("selected v0.1.1 pid=%d uid=%d", getpid(), uid);
+                if (enabled) LOGI("selected v0.2.0 pid=%d uid=%d policy=%u", getpid(), uid, enabled);
             }
+        }
+        if (enabled & 2) {
+            const int removed = isolateOplusOverlays();
+            LOGI("Oplus private namespace pid=%d removed=%d", getpid(), removed);
         }
         if (!enabled) api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
     }
     void postAppSpecialize(const zygisk::AppSpecializeArgs*) override {
-        if (enabled) {
+        if (enabled & 1) {
             const int count = repairStaleArtFds();
             LOGI("completed pid=%d uid=%d repaired=%d", getpid(), getuid(), count);
         }

@@ -3,18 +3,67 @@
 #include <sys/mount.h>
 #include <sched.h>
 #include <cstdio>
+#include <sys/wait.h>
 #include "repair.hpp"
 #include "oplus.hpp"
 #include "init_art.hpp"
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--init-batch") {
+        if (unshare(CLONE_NEWNS) || mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr)) return 40;
+        std::array<int, kBootJars.size()> targets{}, sources{};
+        std::array<std::unique_ptr<FileDescriptorInfo>, kBootJars.size()> info{};
+        for (size_t i = 0; i < targets.size(); ++i) {
+            targets[i] = open(kBootJars[i], O_RDONLY | O_CLOEXEC | (i % 2 ? O_NOFOLLOW : 0));
+            if (targets[i] < 0 || lseek64(targets[i], 4 + i, SEEK_SET) != static_cast<off64_t>(4 + i)) return 41;
+            info[i] = FileDescriptorInfo::CreateFromFd(targets[i], [](const std::string&) {});
+            if (!info[i]) return 41;
+        }
+        if (unshare(CLONE_NEWNS) || mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr)) return 42;
+        int sockets[2];
+        if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets)) return 43;
+        const pid_t child = fork();
+        if (child < 0) return 43;
+        if (!child) {
+            close(sockets[1]);
+            for (size_t i = 0; i < targets.size(); ++i) {
+                unsigned char flag = 2;
+                if (TEMP_FAILURE_RETRY(recv(sockets[0], &flag, 1, 0)) != 1 || flag > 1 ||
+                    !sendArtSource(sockets[0], flag != 0, i)) _exit(44);
+            }
+            close(sockets[0]); _exit(0);
+        }
+        close(sockets[0]);
+        for (size_t i = 0; i < sources.size(); ++i) {
+            const int flag = coreArtNoFollow(i);
+            if (flag != static_cast<int>(i % 2)) return 45;
+            unsigned char request = flag;
+            if (TEMP_FAILURE_RETRY(send(sockets[1], &request, 1, MSG_NOSIGNAL)) != 1) return 45;
+            sources[i] = receiveArtSource(sockets[1]);
+            if (sources[i] < 0) return 45;
+        }
+        close(sockets[1]);
+        int status = -1;
+        if (TEMP_FAILURE_RETRY(waitpid(child, &status, 0)) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return 46;
+        for (size_t i = 0; i < sources.size(); ++i) {
+            if (rebindInitArtSource(sources[i], i) != 1 || !info[i]->RefersToSameFile() ||
+                fdMountId(targets[i]) != fdMountId(sources[i]) ||
+                fcntl(targets[i], F_GETFD) != info[i]->fd_flags ||
+                lseek64(targets[i], 0, SEEK_CUR) != info[i]->offset ||
+                rebindInitArtSource(sources[i], i) != 0) return 47;
+            close(sources[i]); close(targets[i]);
+        }
+        puts("batch=12 mixed_flags=1 wire=1 identities_positions_fdflags=1 idempotent=1");
+        return 0;
+    }
     if (argc == 2 && (std::string(argv[1]) == "--init-art" || std::string(argv[1]) == "--init-art-plain")) {
         const bool noFollow = std::string(argv[1]) == "--init-art";
         for (int standard = 0; standard <= 2; ++standard) {
             if (fcntl(standard, F_GETFD) < 0 && open("/dev/null", O_RDWR) != standard) return 28;
         }
+        for (size_t index = 0; index < kBootJars.size(); ++index) {
         if (unshare(CLONE_NEWNS) != 0 || mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr) != 0) return 29;
-        const int art = open(kCoreArtPath, O_RDONLY | O_CLOEXEC | (noFollow ? O_NOFOLLOW : 0));
+        const int art = open(kBootJars[index], O_RDONLY | O_CLOEXEC | (noFollow ? O_NOFOLLOW : 0));
         const int other = open("/system/etc/hosts", O_RDONLY | O_CLOEXEC);
         if (art < 0 || other < 0 || lseek64(art, 4, SEEK_SET) != 4) return 30;
         const auto old = fdMountId(art), otherId = fdMountId(other);
@@ -22,29 +71,31 @@ int main(int argc, char** argv) {
         if (info) printf("target_fd=%d path=%s\n", art, info->file_path.c_str());
         if (!info || unshare(CLONE_NEWNS) != 0 || mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr) != 0) return 31;
         int sockets[2];
-        if (coreArtNoFollow() != static_cast<int>(noFollow) ||
+        if (coreArtNoFollow(index) != static_cast<int>(noFollow) ||
             socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0) return 32;
-        unsigned char requested = coreArtNoFollow() == 1, received = 2;
+        unsigned char requested = coreArtNoFollow(index) == 1, received = 2;
         if (TEMP_FAILURE_RETRY(send(sockets[1], &requested, 1, MSG_NOSIGNAL)) != 1 ||
             TEMP_FAILURE_RETRY(recv(sockets[0], &received, 1, 0)) != 1 || received > 1 ||
-            !sendArtSource(sockets[0], received != 0)) return 32;
+            !sendArtSource(sockets[0], received != 0, index)) return 32;
         const int source = receiveArtSource(sockets[1]);
         const auto origin = fdMountId(source);
         const int flags = fcntl(art, F_GETFL);
-        const int repaired = rebindInitArtSource(source);
+        const int repaired = rebindInitArtSource(source, index);
         bool pass = repaired == 1 && origin && origin != old && fdMountId(art) == origin &&
             info->RefersToSameFile() && fcntl(art, F_GETFL) == flags && fcntl(art, F_GETFD) == info->fd_flags &&
-            lseek64(art, 0, SEEK_CUR) == 4 && fdMountId(other) == otherId && rebindInitArtSource(source) == 0;
-        const int extra = open(kCoreArtPath, O_RDONLY | O_CLOEXEC | (noFollow ? O_NOFOLLOW : 0));
+            lseek64(art, 0, SEEK_CUR) == 4 && fdMountId(other) == otherId && rebindInitArtSource(source, index) == 0;
+        const int extra = open(kBootJars[index], O_RDONLY | O_CLOEXEC | (noFollow ? O_NOFOLLOW : 0));
         const auto extraMount = fdMountId(extra);
-        const bool multipleRefused = extra >= 0 && rebindInitArtSource(source) == -2 &&
+        const bool multipleRefused = extra >= 0 && rebindInitArtSource(source, index) == -2 &&
             fdMountId(art) == origin && fdMountId(extra) == extraMount && lseek64(art, 0, SEEK_CUR) == 4 &&
             lseek64(extra, 0, SEEK_CUR) == 0;
         pass = pass && multipleRefused;
         printf("old=%lu init=%lu repaired=%d invariants=%d unrelated_fd_unchanged=%d multiple_handles_refused=%d\n", old, origin, repaired, pass, fdMountId(other) == otherId, multipleRefused);
         if (extra >= 0) close(extra);
         close(source); close(art); close(other); close(sockets[0]); close(sockets[1]);
-        return pass ? 0 : 33;
+        if (!pass) return 33;
+        }
+        return 0;
     }
     if (argc == 2 && std::string(argv[1]) == "--oplus") {
         const auto before = oplusOverlayTargets().size();

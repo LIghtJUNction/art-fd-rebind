@@ -45,10 +45,10 @@ static void scopeCompanion(int client) {
         }
     }
     if (transfer(client, &enabled, sizeof(enabled), true) && (enabled & 6)) {
-        if (enabled & 4) {
+        if (enabled & 4) for (size_t index = 0; index < kBootJars.size(); ++index) {
             unsigned char noFollow = 0;
             if (!transfer(client, &noFollow, sizeof(noFollow), false) || noFollow > 1 ||
-                !sendArtSource(client, noFollow != 0)) { close(client); return; }
+                !sendArtSource(client, noFollow != 0, index)) { close(client); return; }
         }
         ScopeResult result{};
         if (transfer(client, &result, sizeof(result), false) &&
@@ -91,20 +91,27 @@ public:
                 if (transfer(client, &query, sizeof(query), true) &&
                     transfer(client, &policy, sizeof(policy), false)) enabled = policy;
                 ScopeResult result{};
-                int source = -1;
-                if (enabled & 4) {
-                    unsigned char noFollow = coreArtNoFollow() == 1;
-                    transfer(client, &noFollow, sizeof(noFollow), true);
-                    source = receiveArtSource(client);
+                std::array<int, kBootJars.size()> sources;
+                sources.fill(-1);
+                if (enabled & 4) for (size_t index = 0; index < sources.size(); ++index) {
+                    unsigned char noFollow = coreArtNoFollow(index) == 1;
+                    if (!transfer(client, &noFollow, sizeof(noFollow), true)) break;
+                    sources[index] = receiveArtSource(client);
+                    if (sources[index] == -2) break;
                 }
                 if (enabled & 2) result.removed = isolateOplusOverlays();
                 if (enabled & 4) {
-                    result.initArt = rebindInitArtSource(source);
-                    if (source >= 0) close(source);
+                    result.initArt = 0;
+                    for (size_t index = 0; index < sources.size(); ++index) {
+                        const int count = rebindInitArtSource(sources[index], index);
+                        if (count < 0) result.initArt = count;
+                        else if (result.initArt >= 0) result.initArt += count;
+                        if (sources[index] >= 0) close(sources[index]);
+                    }
                 }
                 if (enabled & 6) transfer(client, &result, sizeof(result), true);
                 close(client);
-                if (enabled) LOGI("selected v0.2.3 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
+                if (enabled) LOGI("selected v0.2.4 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
             }
         }
         if (!enabled) api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);

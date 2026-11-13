@@ -2,14 +2,31 @@
 // Copyright 2026 LIghtJUNction
 #pragma once
 #include <cstring>
+#include <array>
 #include <sys/socket.h>
 #include "repair.hpp"
 
-inline constexpr char kCoreArtPath[] = "/apex/com.android.art/javalib/core-libart.jar";
+// Fixed public boot JAR allowlist; callers cannot choose a privileged pathname.
+inline constexpr std::array<const char*, 12> kBootJars = {
+    "/apex/com.android.art/javalib/core-libart.jar",
+    "/apex/com.android.art/javalib/core-oj.jar",
+    "/apex/com.android.art/javalib/okhttp.jar",
+    "/apex/com.android.art/javalib/bouncycastle.jar",
+    "/apex/com.android.art/javalib/apache-xml.jar",
+    "/system/framework/framework.jar",
+    "/system/framework/framework-graphics.jar",
+    "/system/framework/framework-location.jar",
+    "/system/framework/ext.jar",
+    "/system/framework/telephony-common.jar",
+    "/system/framework/voip-common.jar",
+    "/system/framework/ims-common.jar",
+};
+inline constexpr auto kCoreArtPath = kBootJars[0];
 
-inline bool sendArtSource(int socket, bool noFollow = false) {
+inline bool sendArtSource(int socket, bool noFollow = false, size_t index = 0) {
+    if (index >= kBootJars.size()) return false;
     // Fixed public system file only: no client-supplied privileged path.
-    const auto path = std::string("/proc/1/root") + kCoreArtPath;
+    const auto path = std::string("/proc/1/root") + kBootJars[index];
     struct stat before{}, st{};
     int fd = -1;
     if (lstat(path.c_str(), &before) == 0 && S_ISREG(before.st_mode) && (before.st_mode & S_IROTH))
@@ -37,9 +54,10 @@ inline bool sendArtSource(int socket, bool noFollow = false) {
     return sent;
 }
 
-inline int coreArtNoFollow() {
+inline int coreArtNoFollow(size_t index = 0) {
+    if (index >= kBootJars.size()) return -1;
     struct stat canonical{};
-    if (::stat(kCoreArtPath, &canonical) != 0) return -1;
+    if (::stat(kBootJars[index], &canonical) != 0) return -1;
     const auto fds = GetOpenFds([](const std::string&) {});
     if (!fds) return -1;
     int result = -1;
@@ -77,16 +95,19 @@ inline int receiveArtSource(int socket) {
             else { close(next); valid = false; }
         }
     }
-    if (valid) return received;
+    if (valid && received >= 0) return received;
+    const bool unavailable = size == 1 && status == 0 &&
+        !(message.msg_flags & (MSG_CTRUNC | MSG_TRUNC)) && !CMSG_FIRSTHDR(&message);
     if (received >= 0) close(received);
-    return -1;
+    return unavailable ? -1 : -2; // A broken exchange cannot be reused for another index.
 }
 
-inline int rebindInitArtSource(int source) {
+inline int rebindInitArtSource(int source, size_t index = 0) {
+    if (index >= kBootJars.size()) return -1;
     struct stat origin{};
     if (source < 0 || fstat(source, &origin) != 0 || !S_ISREG(origin.st_mode)) return -1;
     struct stat canonical{};
-    if (::stat(kCoreArtPath, &canonical) != 0 || canonical.st_dev != origin.st_dev || canonical.st_ino != origin.st_ino) return -1;
+    if (::stat(kBootJars[index], &canonical) != 0 || canonical.st_dev != origin.st_dev || canonical.st_ino != origin.st_ino) return -1;
     const int sourceFlags = fcntl(source, F_GETFL);
     if (sourceFlags < 0 || (sourceFlags & O_ACCMODE) != O_RDONLY || (sourceFlags & O_PATH)) return -1;
     const auto sourceMount = fdMountId(source);

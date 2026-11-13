@@ -31,11 +31,11 @@ v0.2 当时剩余的警告指向 `/system_ext/lib64/oplusex/com.oplus.NetworkAss
 
 这是显式启用的应用兼容性实验，可能使目标应用缺少厂商扩展。系统主命名空间及其他应用的挂载不改变。
 
-## 原始 ART 句柄实验（v0.2.3，应用验收待完成）
+## 原始 ART 句柄实验（v0.2.4，应用验收待完成）
 
-root companion 只打开固定的公开系统文件 `/proc/1/root/apex/com.android.art/javalib/core-libart.jar`，通过 SCM_RIGHTS 将真实只读句柄交给明确选择的进程。进程在 specialize 前只处理设备号、inode与该文件相同的单个旧句柄，保持原 FD 编号、位置、状态和关闭时标志；遇到多个句柄会跳过，防止耦合独立的读取位置。校验失败会恢复旧句柄；若无法恢复，只终止当前被选择的子进程。
+root companion 只打开固定白名单中的12个公开启动 JAR（5个 ART、7个 system framework；路径见 `native/init_art.hpp`）的 `/proc/1/root` 视图，通过 SCM_RIGHTS 将真实只读句柄交给明确选择的进程。进程在 specialize 前只处理设备号、inode与该文件相同的单个旧句柄，保持原 FD 编号、位置、状态和关闭时标志；遇到多个句柄会跳过，防止耦合独立的读取位置。校验失败会恢复旧句柄；若无法恢复，只终止当前被选择的子进程。
 
-这不改变系统挂载，也不改写 fdinfo。Root 独立自测已观察到原始挂载编号315，文件身份、位置、标志、幂等性、无关FD及多个句柄拒绝处理均通过；v0.2.2 在实机上因额外 O_NOFOLLOW 与原句柄不一致而主动拒绝替换；v0.2.3 按原句柄选择这个标志，同时先后核对固定路径的 regular-file 身份，拒绝末级符号链接与打开期间文件变化。带/不带 O_NOFOLLOW 两种独立自测均通过；Native 检测结果仍待新版重启验证。
+这不改变系统挂载，也不改写 fdinfo。Root 独立自测已观察到原始挂载编号315，文件身份、位置、标志、幂等性、无关FD及多个句柄拒绝处理均通过；v0.2.2 在实机上因额外 O_NOFOLLOW 与原句柄不一致而主动拒绝替换；v0.2.3 按原句柄选择这个标志，同时先后核对固定路径的 regular-file 身份，拒绝末级符号链接与打开期间文件变化。带/不带 O_NOFOLLOW 两种独立自测均通过；v0.2.3 已实际消除 core-libart.jar 的命中，检测器接着显示同组 okhttp.jar；v0.2.4 一次处理上述整组文件，保持每个文件各自的身份、位置和标志。Native 完整验收仍待重启验证。
 
 普通应用用 root-only `/data/adb/art_fd_rebind/init_art_targets/<完整UID>` 标记；符合下文私有进程命名约束的隔离服务用 `/data/adb/art_fd_rebind/init_art_isolated_targets/<Android用户>/<包名>` 标记。目录0700、文件0600、root所有。它与 Oplus 开关独立；若同时选中旧 ART 重开开关，优先使用本实验且不回退旧方式。默认没有目标。
 

@@ -1,6 +1,6 @@
 id=art_fd_rebind
 name=App Namespace Experiments
-version=v0.2.3
-versionCode=6
+version=v0.2.4
+versionCode=7
 author=LIghtJUNction; AOSP/NoHello FD helpers
 description=Opt-in ART FD rebind and private Oplus overlay isolation experiments

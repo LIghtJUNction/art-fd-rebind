@@ -1,4 +1,10 @@
-# v0.2.3 — experimental (app acceptance pending)
+# v0.2.4 — experimental (app acceptance pending)
+
+- Rebind the 12 fixed public boot JARs inherited at FD8–19 on the tested device, rather than stopping after core-libart.jar. No client-selected pathname or arbitrary file proxy.
+- Gather real source descriptors before namespace isolation, preserving independent per-file identities, flags and positions; retain rollback and multiple-handle refusal.
+- v0.2.3 app logs confirmed genuine core-libart replacement, then Native Detector displayed okhttp.jar as its next first match. Full v0.2.4 app acceptance remains pending.
+
+# v0.2.3 — experimental (core-libart repaired; other inherited JARs remain)
 
 - Preserve the original O_NOFOLLOW setting instead of adding it to every source descriptor.
 - The root companion still opens only the fixed public ART path; reject a symlink before opening and compare pre/post open device/inode and regular/world-readable status.
@@ -10,7 +16,7 @@
 - Fixed public core-libart.jar path only, no caller-selected privileged filename; verify identity, read-only status, flags and position before replacement.
 - Preserve the target FD number; refuse multiple matching handles; rollback validation failures and stop only the selected child if rollback is unrecoverable.
 - Independent private-namespace device self-test passed: genuine source mount315, device/inode/position/flags intact, idempotent, unrelated FD unchanged, multiple handles refused.
-- Native Detector acceptance remains pending; this is not yet a detector-pass claim.
+- Device run rejected the replacement because the extra O_NOFOLLOW differed from the original flags; no descriptor was changed.
 
 # v0.2.1 — experimental
 

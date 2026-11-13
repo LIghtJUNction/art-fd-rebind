@@ -7,6 +7,7 @@
 #include "repair.hpp"
 #include "oplus.hpp"
 #include "scope.hpp"
+#include "init_art.hpp"
 
 static bool transfer(int fd, void* data, size_t size, bool sending) {
     auto* p = static_cast<char*>(data);
@@ -36,21 +37,24 @@ static void scopeCompanion(int client) {
         if (isIsolatedUid(query.uid)) {
             // Isolated IDs are recycled: never apply a persistent UID marker to them.
             if (scopeMarker(isolatedScopeMarker(query.uid, query.process, query.childZygote != 0))) enabled = 2;
+            if (scopeMarker(isolatedScopeMarker(query.uid, query.process, query.childZygote != 0, true))) enabled |= 4;
         } else {
             enabled = scopeMarker("/data/adb/art_fd_rebind/targets/" + std::to_string(query.uid));
             if (scopeMarker("/data/adb/art_fd_rebind/oplus_targets/" + std::to_string(query.uid))) enabled |= 2;
+            if (scopeMarker("/data/adb/art_fd_rebind/init_art_targets/" + std::to_string(query.uid))) enabled |= 4;
         }
     }
-    if (transfer(client, &enabled, sizeof(enabled), true) && (enabled & 2)) {
-        int removed = -1;
-        if (transfer(client, &removed, sizeof(removed), false) &&
+    if (transfer(client, &enabled, sizeof(enabled), true) && (enabled & 6)) {
+        if ((enabled & 4) && !sendArtSource(client)) { close(client); return; }
+        ScopeResult result{};
+        if (transfer(client, &result, sizeof(result), false) &&
             scopeMarker("/data/adb/art_fd_rebind/debug")) {
             const int log = open("/data/adb/art_fd_rebind/isolated.log",
                 O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
             if (log >= 0) {
                 const auto package = processPackage(query.process, query.childZygote != 0);
-                dprintf(log, "pid=%d uid=%d child_zygote=%d policy=%u removed=%d package=%s\n",
-                    query.pid, query.uid, query.childZygote != 0, enabled, removed, package.c_str());
+                dprintf(log, "pid=%d uid=%d child_zygote=%d policy=%u removed=%d init_art=%d package=%s\n",
+                    query.pid, query.uid, query.childZygote != 0, enabled, result.removed, result.initArt, package.c_str());
                 close(log);
             }
         }
@@ -82,18 +86,22 @@ public:
                 unsigned char policy = 0;
                 if (transfer(client, &query, sizeof(query), true) &&
                     transfer(client, &policy, sizeof(policy), false)) enabled = policy;
-                if (enabled & 2) {
-                    int removed = isolateOplusOverlays();
-                    transfer(client, &removed, sizeof(removed), true);
+                ScopeResult result{};
+                if (enabled & 2) result.removed = isolateOplusOverlays();
+                if (enabled & 4) {
+                    const int source = receiveArtSource(client);
+                    result.initArt = rebindInitArtSource(source);
+                    if (source >= 0) close(source);
                 }
+                if (enabled & 6) transfer(client, &result, sizeof(result), true);
                 close(client);
-                if (enabled) LOGI("selected v0.2.1 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
+                if (enabled) LOGI("selected v0.2.2 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
             }
         }
         if (!enabled) api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
     }
     void postAppSpecialize(const zygisk::AppSpecializeArgs*) override {
-        if (enabled & 1) {
+        if ((enabled & 1) && !(enabled & 4)) {
             const int count = repairStaleArtFds();
             LOGI("completed pid=%d uid=%d repaired=%d", getpid(), getuid(), count);
         }

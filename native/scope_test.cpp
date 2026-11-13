@@ -7,6 +7,8 @@ int main() {
     assert(isolatedScopeMarker(99073, "com.example:iso:Service:instance", false) == prefix + "0/com.example");
     assert(isolatedScopeMarker(90000, "com.example:appZ:Service", false) == prefix + "0/com.example");
     assert(isolatedScopeMarker(199073, "com.example:iso", false) == prefix + "1/com.example");
+    assert(isolatedScopeMarker(99073, "com.example:iso", false, true) ==
+        "/data/adb/art_fd_rebind/init_art_isolated_targets/0/com.example");
     assert(isolatedScopeMarker(99000, "com.example_zygote", true).empty());
     assert(isolatedScopeMarker(99000, "com.example", false).empty());
     assert(isolatedScopeMarker(99000, "com.example:com.other.Service:instance", false).empty());

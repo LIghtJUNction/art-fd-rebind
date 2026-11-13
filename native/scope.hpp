@@ -32,7 +32,7 @@ inline std::string processPackage(std::string name, bool childZygote) {
     return first ? std::string() : name;
 }
 
-inline std::string isolatedScopeMarker(int uid, const std::string& process, bool childZygote) {
+inline std::string isolatedScopeMarker(int uid, const std::string& process, bool childZygote, bool initArt = false) {
     if (!isIsolatedUid(uid) || childZygote) return {};
     // Only support private process names (package:identifier[:instance...]).
     // A global process name is not package identity; its appended component
@@ -44,5 +44,11 @@ inline std::string isolatedScopeMarker(int uid, const std::string& process, bool
     if (suffix.empty() || processPackage(suffix, false) != suffix || suffix.find('.') != std::string::npos) return {};
     const auto package = processPackage(process, childZygote);
     if (package.empty()) return {};
-    return "/data/adb/art_fd_rebind/isolated_targets/" + std::to_string(uid / 100000) + "/" + package;
+    return std::string("/data/adb/art_fd_rebind/") +
+        (initArt ? "init_art_isolated_targets/" : "isolated_targets/") + std::to_string(uid / 100000) + "/" + package;
 }
+
+struct ScopeResult {
+    int32_t removed = -1;
+    int32_t initArt = -1;
+};

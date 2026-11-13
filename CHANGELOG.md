@@ -1,3 +1,11 @@
+# v0.2.2 — experimental (app acceptance pending)
+
+- Independently opted-in original-init ART descriptor source, provided by the root companion over SCM_RIGHTS.
+- Fixed public core-libart.jar path only, no caller-selected privileged filename; verify identity, read-only status, flags and position before replacement.
+- Preserve the target FD number; refuse multiple matching handles; rollback validation failures and stop only the selected child if rollback is unrecoverable.
+- Independent private-namespace device self-test passed: genuine source mount315, device/inode/position/flags intact, idempotent, unrelated FD unchanged, multiple handles refused.
+- Native Detector acceptance remains pending; this is not yet a detector-pass claim.
+
 # v0.2.1 — experimental
 
 - Select isolated services by Android user and package name, including dynamic private service-instance process names. Reject ambiguous global names; app-zygote parents retain their ordinary UID policy.

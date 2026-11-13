@@ -4,7 +4,8 @@
 - Require a new mount namespace and recursive PRIVATE propagation before any detach.
 - Limit matching to overlay mounts under system_ext framework/lib64 oplusex directories.
 - ART rebinding remains a separate switch; it does not clear Native Detector7.7 Magic Mount.
-- Private-namespace device self-test removed9overlays with init mounts byte-identical. App acceptance is pending a coordinated reboot.
+- Private-namespace device self-test removed9overlays with init mounts byte-identical; the target app mount view also no longer contains them.
+- Same-boot cold-start A/B: Oplus off gives two suspicious-mount warnings, on leaves one NetworkAssistSys warning. Neither state reports Magic Mount in this boot; this feature is not credited with clearing Magic Mount.
 
 # v0.1.1 — experimental
 

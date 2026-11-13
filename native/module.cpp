@@ -91,11 +91,14 @@ public:
                 if (transfer(client, &query, sizeof(query), true) &&
                     transfer(client, &policy, sizeof(policy), false)) enabled = policy;
                 ScopeResult result{};
-                if (enabled & 2) result.removed = isolateOplusOverlays();
+                int source = -1;
                 if (enabled & 4) {
                     unsigned char noFollow = coreArtNoFollow() == 1;
                     transfer(client, &noFollow, sizeof(noFollow), true);
-                    const int source = receiveArtSource(client);
+                    source = receiveArtSource(client);
+                }
+                if (enabled & 2) result.removed = isolateOplusOverlays();
+                if (enabled & 4) {
                     result.initArt = rebindInitArtSource(source);
                     if (source >= 0) close(source);
                 }

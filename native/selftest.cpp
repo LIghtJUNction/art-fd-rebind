@@ -22,7 +22,12 @@ int main(int argc, char** argv) {
         if (info) printf("target_fd=%d path=%s\n", art, info->file_path.c_str());
         if (!info || unshare(CLONE_NEWNS) != 0 || mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr) != 0) return 31;
         int sockets[2];
-        if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0 || !sendArtSource(sockets[0], noFollow)) return 32;
+        if (coreArtNoFollow() != static_cast<int>(noFollow) ||
+            socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0) return 32;
+        unsigned char requested = coreArtNoFollow() == 1, received = 2;
+        if (TEMP_FAILURE_RETRY(send(sockets[1], &requested, 1, MSG_NOSIGNAL)) != 1 ||
+            TEMP_FAILURE_RETRY(recv(sockets[0], &received, 1, 0)) != 1 || received > 1 ||
+            !sendArtSource(sockets[0], received != 0)) return 32;
         const int source = receiveArtSource(sockets[1]);
         const auto origin = fdMountId(source);
         const int flags = fcntl(art, F_GETFL);

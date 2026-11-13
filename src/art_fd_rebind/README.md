@@ -73,6 +73,6 @@ chmod 600 /data/adb/art_fd_rebind/targets/12345
 
 文件描述符工具及 Zygisk API 头文件固定来自 [NoHello c77f10d3](https://github.com/MhmRdd/NoHello/tree/c77f10d3ccfcabbecbb439f24a033d791aeaaf25/module/src/main/cpp)。FD工具原始逻辑来自 AOSP。改动仅包括本地日志头文件路径，以及在 open flags 中保留 O_NOFOLLOW，避免其经 F_SETFL 丢失。
 
-本项目代码采用 Apache-2.0；上游文件保留各自许可和版权头，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。原始设备日志、截图、应用列表、配置与其他私人材料未包含在仓库中。
+本项目代码采用 Apache-2.0；上游文件保留各自许可和版权头，见 [THIRD_PARTY_NOTICES.md](NOTICE)。原始设备日志、截图、应用列表、配置与其他私人材料未包含在仓库中。
 
 Experimental Zygisk prototype for reopening stale read-only ART archive descriptors. Rebinding works in the tested app, but **does not clear Native Detector7.7.0 Magic Mount**. No targets are enabled by default.

@@ -45,7 +45,11 @@ static void scopeCompanion(int client) {
         }
     }
     if (transfer(client, &enabled, sizeof(enabled), true) && (enabled & 6)) {
-        if ((enabled & 4) && !sendArtSource(client)) { close(client); return; }
+        if (enabled & 4) {
+            unsigned char noFollow = 0;
+            if (!transfer(client, &noFollow, sizeof(noFollow), false) || noFollow > 1 ||
+                !sendArtSource(client, noFollow != 0)) { close(client); return; }
+        }
         ScopeResult result{};
         if (transfer(client, &result, sizeof(result), false) &&
             scopeMarker("/data/adb/art_fd_rebind/debug")) {
@@ -89,13 +93,15 @@ public:
                 ScopeResult result{};
                 if (enabled & 2) result.removed = isolateOplusOverlays();
                 if (enabled & 4) {
+                    unsigned char noFollow = coreArtNoFollow() == 1;
+                    transfer(client, &noFollow, sizeof(noFollow), true);
                     const int source = receiveArtSource(client);
                     result.initArt = rebindInitArtSource(source);
                     if (source >= 0) close(source);
                 }
                 if (enabled & 6) transfer(client, &result, sizeof(result), true);
                 close(client);
-                if (enabled) LOGI("selected v0.2.2 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
+                if (enabled) LOGI("selected v0.2.3 pid=%d uid=%d policy=%u", getpid(), args->uid, enabled);
             }
         }
         if (!enabled) api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);

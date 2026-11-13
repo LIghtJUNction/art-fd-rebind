@@ -1,4 +1,10 @@
-# v0.2.2 — experimental (app acceptance pending)
+# v0.2.3 — experimental (app acceptance pending)
+
+- Preserve the original O_NOFOLLOW setting instead of adding it to every source descriptor.
+- The root companion still opens only the fixed public ART path; reject a symlink before opening and compare pre/post open device/inode and regular/world-readable status.
+- Independent device tests pass both original-flag variants, including the plain open used by the actual app. No target descriptor was changed in the rejected v0.2.2 app run.
+
+# v0.2.2 — experimental (guard rejected on device)
 
 - Independently opted-in original-init ART descriptor source, provided by the root companion over SCM_RIGHTS.
 - Fixed public core-libart.jar path only, no caller-selected privileged filename; verify identity, read-only status, flags and position before replacement.

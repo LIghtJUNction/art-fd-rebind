@@ -7,11 +7,15 @@
 
 inline constexpr char kCoreArtPath[] = "/apex/com.android.art/javalib/core-libart.jar";
 
-inline bool sendArtSource(int socket) {
+inline bool sendArtSource(int socket, bool noFollow = false) {
     // Fixed public system file only: no client-supplied privileged path.
-    int fd = open((std::string("/proc/1/root") + kCoreArtPath).c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    struct stat st{};
-    if (fd >= 0 && (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || !(st.st_mode & S_IROTH))) {
+    const auto path = std::string("/proc/1/root") + kCoreArtPath;
+    struct stat before{}, st{};
+    int fd = -1;
+    if (lstat(path.c_str(), &before) == 0 && S_ISREG(before.st_mode) && (before.st_mode & S_IROTH))
+        fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | (noFollow ? O_NOFOLLOW : 0));
+    if (fd >= 0 && (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || !(st.st_mode & S_IROTH) ||
+        before.st_dev != st.st_dev || before.st_ino != st.st_ino)) {
         close(fd); fd = -1;
     }
     unsigned char status = fd >= 0;
@@ -31,6 +35,24 @@ inline bool sendArtSource(int socket) {
     const bool sent = TEMP_FAILURE_RETRY(sendmsg(socket, &message, MSG_NOSIGNAL)) == 1;
     if (fd >= 0) close(fd);
     return sent;
+}
+
+inline int coreArtNoFollow() {
+    struct stat canonical{};
+    if (::stat(kCoreArtPath, &canonical) != 0) return -1;
+    const auto fds = GetOpenFds([](const std::string&) {});
+    if (!fds) return -1;
+    int result = -1;
+    for (const int fd : *fds) {
+        struct stat st{};
+        if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+            st.st_dev != canonical.st_dev || st.st_ino != canonical.st_ino) continue;
+        const int flags = fcntl(fd, F_GETFL);
+        if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || (flags & O_PATH)) continue;
+        if (result >= 0) return -1;
+        result = (flags & O_NOFOLLOW) != 0;
+    }
+    return result;
 }
 
 inline int receiveArtSource(int socket) {
